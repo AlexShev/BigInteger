@@ -9,11 +9,13 @@ class BigInteger
 {
 public:
 
+	enum Type;
+
 	BigInteger();
 	BigInteger(const std::string& number);
 	BigInteger(const BigInteger& number);
 	BigInteger(BigInteger&& number);
-	BigInteger(Digits&& number, bool isPositive);
+	BigInteger(Digits&& number, BigInteger::Type isPositive);
 
 
 	void CopyTo(BigInteger& number) const;
@@ -44,16 +46,20 @@ public:
 
 
 	std::string ToString() const;
+	void ChangeSign();
 
 private:
 
 	inline static bool IsPositive(const std::string& number);
 	bool static IsNumber(const std::string& number);
+	bool static IsZero(const std::string& number);
 
 	
 	void SetDefault();
+	void SetNaN();
+	Type static GetOpositeType(const Type& type);
 
-	
+
 	Digits static Sum(const Digits& first, const Digits& second);
 	Digits static Sum(const std::vector<const Digits*> numbers);
 
@@ -76,8 +82,15 @@ private:
 
 
 	Digits _number;
-	bool _isPositive = true;
+	Type _type;
 
 	static const int NUMBER_BASE = 10;
 };
 
+enum BigInteger::Type
+{
+	NaN = -2,
+	negative = -1,
+	zero = 0,
+	positive = 1,
+};

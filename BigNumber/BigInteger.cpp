@@ -2,7 +2,6 @@
 #include <stdexcept>
 #include <numeric>
 
-
 #pragma region Constructors
 
 BigInteger::BigInteger()
@@ -15,28 +14,41 @@ BigInteger::BigInteger(const std::string& number)
 {
 	if (!IsNumber(number))
 	{
-		throw std::invalid_argument("it's not a number!");
+		SetNaN();
 	}
-
-	int stop = 0;
-
-	_isPositive = IsPositive(number);
-
-	if (!_isPositive)
+	else
 	{
-		++stop;
-	}
+		auto stop = number.rend();
 
-	for (int i = number.size() - 1; i >= stop; --i)
-	{
-		_number.push_back(number[i] - '0');
+		if (IsPositive(number))
+		{
+			_type = positive;
+		}
+		else if (IsZero(number))
+		{
+			_type = zero;
+		}
+		else
+		{
+			_type = negative;
+			--stop;
+		}
+
+		for (auto i = number.rbegin(); i != stop; ++i)
+		{
+			_number.push_back(*i - '0');
+		}
 	}
 }
 
 
-BigInteger::BigInteger(Digits&& number, bool isPositive = true)
+BigInteger::BigInteger(Digits&& number, Type type)
 {
-	if (number.empty())
+	if (type == NaN)
+	{
+		SetNaN();
+	}
+	else if (number.empty())
 	{
 		SetDefault();
 	}
@@ -44,9 +56,8 @@ BigInteger::BigInteger(Digits&& number, bool isPositive = true)
 	{
 		_number = std::move(number);
 
-		_isPositive = isPositive;
+		_type = type;
 	}
-
 }
 
 
@@ -68,7 +79,7 @@ BigInteger::BigInteger(BigInteger&& number)
 
 void BigInteger::SetDefault()
 {
-	_isPositive = true;
+	_type = zero;
 
 	_number.clear();
 
@@ -76,9 +87,32 @@ void BigInteger::SetDefault()
 }
 
 
+void BigInteger::SetNaN()
+{
+	_number.clear();
+
+	_type = Type::NaN;
+}
+
+
+BigInteger::Type BigInteger::GetOpositeType(const BigInteger::Type& type)
+{
+	if (type == positive)
+	{
+		return negative;
+	}
+	else if(type == negative)
+	{
+		return positive;
+	}
+
+	return type;
+}
+
+
 void BigInteger::CopyTo(BigInteger& number) const
 {
-	number._isPositive = this->_isPositive;
+	number._type = this->_type;
 
 	number._number = this->_number;
 }
@@ -86,7 +120,7 @@ void BigInteger::CopyTo(BigInteger& number) const
 
 void BigInteger::MoveTo(BigInteger& number)
 {
-	number._isPositive = this->_isPositive;
+	number._type = this->_type;
 
 	number._number = std::move(this->_number);
 
@@ -103,6 +137,7 @@ BigInteger& BigInteger::operator= (const BigInteger& left)
 
 	return *this;
 }
+
 
 BigInteger& BigInteger::operator= (BigInteger&& left)
 {
@@ -121,21 +156,31 @@ BigInteger& BigInteger::operator= (BigInteger&& left)
 
 std::string BigInteger::ToString() const
 {
+	if (_type == NaN)
+	{
+		return "NaN";
+	}
+
 	std::string res;
 
 	res.reserve(_number.size() + 1);
 
-	if (!_isPositive)
+	if (_type == negative)
 	{
 		res.push_back('-');
 	}
 
-	for (int i = _number.size() - 1; i >= 0; --i)
+	for (auto digit = _number.rbegin(); digit != _number.rend(); ++digit)
 	{
-		res.push_back(_number[i] + '0');
+		res.push_back(*digit + '0');
 	}
 
 	return res;
+}
+
+void BigInteger::ChangeSign()
+{
+	_type = GetOpositeType(_type);
 }
 
 #pragma endregion
@@ -167,18 +212,18 @@ BigInteger BigInteger::Sum(const std::initializer_list<BigInteger*> numbers)
 
 	for (auto& number : numbers)
 	{
-		if (number->_isPositive)
+		if (number->_type == positive)
 		{
 			positives.push_back(&(number->_number));
 		}
-		else
+		else if (number->_type == negative)
 		{
 			negatives.push_back(&(number->_number));
 		}
 	}
 
-	BigInteger positive = std::move(BigInteger(Sum(positives), true));
-	BigInteger negative = std::move(BigInteger(Sum(negatives), false));
+	BigInteger positive = std::move(BigInteger(Sum(positives), Type::positive));
+	BigInteger negative = std::move(BigInteger(Sum(negatives), Type::negative));
 
 	return SubtractOppositeSign(positive._number, negative._number);
 }
@@ -186,42 +231,78 @@ BigInteger BigInteger::Sum(const std::initializer_list<BigInteger*> numbers)
 
 BigInteger BigInteger::Sum(const BigInteger& first, const BigInteger& second)
 {
-	if (first._isPositive == second._isPositive)
+	if (first._type == NaN || second._type == NaN)
 	{
-		return BigInteger(Sum(first._number, second._number), first._isPositive);
+		return BigInteger(Digits(), NaN);
 	}
-	else
+	else if (first._type == zero)
+	{
+		return BigInteger(second);
+	}
+	else if (second._type == zero)
+	{
+		return BigInteger(first);
+	}
+	else if (first._type == second._type)
+	{
+		return BigInteger(Sum(first._number, second._number), first._type);
+	}
+	else if (first._type != second._type)
 	{
 		if (AbsLess(first._number, second._number))
 		{
-			return BigInteger(Subtract(second._number, first._number), false);
+			return BigInteger(Subtract(second._number, first._number), negative);
 		}
 		else
 		{
-			return BigInteger(Subtract(first._number, second._number), true);
+			return BigInteger(Subtract(first._number, second._number), positive);
 		}
+	}
+	else
+	{
+		throw std::logic_error("non-executble cod");
 	}
 }
 
 
 BigInteger BigInteger::Subtract(const BigInteger& first, const BigInteger& second)
 {
-	if (first._isPositive == second._isPositive)
+	if (first._type == NaN || second._type == NaN)
+	{
+		return BigInteger(Digits(), NaN);
+	}
+	else if (first._type == zero)
+	{
+		BigInteger res = second;
+		res.ChangeSign();
+
+		return res;
+	}
+	else if (second._type == zero)
+	{
+		return BigInteger(first);
+	}
+	else if (first._type == second._type)
 	{
 		bool isLess = AbsLess(first._number, second._number);
+		bool isSecondPositive = second._type == BigInteger::positive;
 
 		if (isLess)
 		{
-			return BigInteger(Subtract(second._number, first._number), isLess ^ second._isPositive);
+			BigInteger::Type type = isSecondPositive ? negative : positive;
+
+			return BigInteger(Subtract(second._number, first._number), type);
 		}
 		else
 		{
-			return BigInteger(Subtract(first._number, second._number), isLess ^ second._isPositive);
+			BigInteger::Type type = !isSecondPositive ? negative : positive;
+
+			return BigInteger(Subtract(first._number, second._number), type);
 		}
 	}
 	else
 	{
-		return BigInteger(Sum(first._number, second._number), first._isPositive);
+		return BigInteger(Sum(first._number, second._number), first._type);
 	}
 }
 
@@ -437,11 +518,11 @@ BigInteger BigInteger::SubtractOppositeSign(const Digits& first, const Digits& s
 {
 	if (AbsLess(first, second))
 	{
-		return BigInteger(Subtract(second, first), false);
+		return BigInteger(Subtract(second, first), negative);
 	}
 	else
 	{
-		return BigInteger(Subtract(first, second), true);
+		return BigInteger(Subtract(first, second), positive);
 	}
 }
 #pragma endregion
@@ -451,38 +532,56 @@ BigInteger BigInteger::SubtractOppositeSign(const Digits& first, const Digits& s
 
 bool operator < (const BigInteger& first, const BigInteger& second)
 {
-	if (first._isPositive != second._isPositive)
+	if (first._type == BigInteger::NaN || second._type == BigInteger::NaN)
 	{
-		return !first._isPositive;
+		return false;
 	}
-
-	// first._isPositive == second._isPositive
-	if (first._isPositive)
+	else if (first._type == second._type)
 	{
-		return BigInteger::AbsLess(first._number, second._number);
+		if (first._type == BigInteger::positive)
+		{
+			return BigInteger::AbsLess(first._number, second._number);
+		}
+		else if (first._type == BigInteger::negative)
+		{
+			return BigInteger::AbsLess(second._number, first._number);
+		}
+		else // zero
+		{
+			return false;
+		}
 	}
 	else
 	{
-		return BigInteger::AbsLess(second._number, first._number);
+		return first._type < second._type;
 	}
 }
 
 
 bool operator > (const BigInteger& first, const BigInteger& second)
 {
-	if (first._isPositive != second._isPositive)
+	if (first._type == BigInteger::NaN || second._type == BigInteger::NaN)
 	{
-		return !first._isPositive;
+		return false;
 	}
-
-	// first._isPositive == second._isPositive
-	if (first._isPositive)
+	else if (first._type == second._type)
 	{
-		return BigInteger::AbsGreat(first._number, second._number);
+		if (first._type == BigInteger::positive)
+		{
+			return BigInteger::AbsGreat(first._number, second._number);
+		}
+		else if (first._type == BigInteger::negative)
+		{
+			return BigInteger::AbsGreat(second._number, first._number);
+		}
+		else // zero
+		{
+			return false;
+		}
 	}
 	else
 	{
-		return BigInteger::AbsGreat(second._number, first._number);
+		return first._type > second._type;
 	}
 }
 
@@ -495,9 +594,11 @@ bool operator== (const BigInteger& first, const BigInteger& second)
 	}
 
 	// first._number.size() == second._number.size()
-	for (int i = first._number.size() - 1; i >= 0; --i)
+	for (auto i = first._number.rbegin(), 
+			  j = second._number.rbegin(); 
+		i != first._number.rend(); ++i, ++j)
 	{
-		if (first._number[i] != second._number[i])
+		if (*i != *j)
 		{
 			return false;
 		}
@@ -522,7 +623,6 @@ bool operator>= (const BigInteger& first, const BigInteger& second)
 }
 
 
-
 bool BigInteger::AbsLess(const Digits& first, const Digits& second)
 {
 	if (first.size() != second.size())
@@ -531,11 +631,14 @@ bool BigInteger::AbsLess(const Digits& first, const Digits& second)
 	}
 
 	// first._number.size() == second._number.size()
-	for (int i = first.size() - 1; i >= 0; --i)
+
+	for (auto i = first.rbegin(),
+		j = second.rbegin();
+		i != first.rend(); ++i, ++j)
 	{
-		if (first[i] != second[i])
+		if (*i != *j)
 		{
-			return first[i] < second[i];
+			return *i < *j;
 		}
 	}
 
@@ -551,11 +654,13 @@ bool BigInteger::AbsGreat(const Digits& first, const Digits& second)
 	}
 
 	// first._number.size() == second._number.size()
-	for (size_t i = 0; i < first.size(); i++)
+	for (auto i = first.rbegin(),
+		j = second.rbegin();
+		i != first.rend(); ++i, ++j)
 	{
-		if (first[i] != second[i])
+		if (*i != *j)
 		{
-			return first[i] > second[i];
+			return *i > *j;
 		}
 	}
 
@@ -571,6 +676,7 @@ inline bool BigInteger::IsPositive(const std::string& number)
 {
 	return number[0] != '-';
 }
+
 
 bool BigInteger::IsNumber(const std::string& number)
 {
@@ -595,6 +701,12 @@ bool BigInteger::IsNumber(const std::string& number)
 	}
 
 	return true;
+}
+
+
+bool BigInteger::IsZero(const std::string& number)
+{
+	return number.size() == 1 && number[0] == '0';
 }
 
 #pragma endregion
